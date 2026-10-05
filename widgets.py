@@ -1,8 +1,5 @@
-# Custom-drawn instrument widgets for the Pan-Tilt Gimbal Control Console.
-#
-# These are painted from scratch with QPainter so the console carries no image
-# assets at all: an artificial-horizon attitude indicator (live pitch + roll)
-# and a pan heading compass.
+# Instrument widgets drawn with QPainter: an artificial horizon and a pan
+# compass. No image files needed.
 
 import math
 
@@ -11,15 +8,15 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPolygonF, QConic
 from PyQt6.QtWidgets import QWidget
 
 
-_SKY = QColor(58, 123, 165)
-_GROUND = QColor(120, 86, 54)
-_ACCENT = QColor(120, 220, 232)
-_INK = QColor(18, 22, 28)
-_LINE = QColor(236, 240, 244)
+_SKY = QColor(110, 134, 156)
+_GROUND = QColor(150, 108, 70)
+_ACCENT = QColor(190, 120, 170)
+_INK = QColor(34, 28, 24)
+_LINE = QColor(240, 236, 228)
 
 
 class AttitudeIndicator(QWidget):
-    """Artificial horizon showing the platform's live pitch and roll."""
+    # Artificial horizon: live pitch and roll.
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,18 +37,16 @@ class AttitudeIndicator(QWidget):
         cx, cy = self.width() / 2.0, self.height() / 2.0
         radius = side / 2.0 - 8
 
-        # Clip everything to the instrument bezel.
+        # Clip to the round bezel.
         p.save()
         path_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
-        p.setClipRect(path_rect.toRect())
-        clip = p.clipRegion()
         from PyQt6.QtGui import QRegion
         p.setClipRegion(QRegion(path_rect.toRect(), QRegion.RegionType.Ellipse))
 
-        # Rotate the world by roll, then shift by pitch, and paint sky/ground.
+        # Roll the view, then shift by pitch, and paint sky/ground.
         p.translate(cx, cy)
         p.rotate(-self.roll)
-        pitch_px = self.pitch * (radius / 45.0)  # 45 deg maps to the rim
+        pitch_px = self.pitch * (radius / 45.0)  # 45 deg = rim
         p.translate(0, pitch_px)
 
         big = radius * 3
@@ -108,7 +103,7 @@ class AttitudeIndicator(QWidget):
             QPointF(cx - 8, cy - radius + 16),
             QPointF(cx + 8, cy - radius + 16),
         ])
-        # Pointer stays world-up; rotate opposite the roll so it tracks the scale.
+        # Roll pointer.
         p.save()
         p.translate(cx, cy)
         p.rotate(-self.roll)
@@ -120,7 +115,7 @@ class AttitudeIndicator(QWidget):
 
 
 class HeadingCompass(QWidget):
-    """Compass rose showing the pan axis heading."""
+    # Compass showing the pan heading.
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -141,9 +136,9 @@ class HeadingCompass(QWidget):
 
         # Dial face.
         grad = QConicalGradient(cx, cy, 90)
-        grad.setColorAt(0.0, QColor(30, 38, 48))
-        grad.setColorAt(0.5, QColor(22, 28, 36))
-        grad.setColorAt(1.0, QColor(30, 38, 48))
+        grad.setColorAt(0.0, QColor(46, 38, 32))
+        grad.setColorAt(0.5, QColor(32, 26, 22))
+        grad.setColorAt(1.0, QColor(46, 38, 32))
         p.setBrush(QBrush(grad))
         p.setPen(QPen(_INK, 8))
         p.drawEllipse(QPointF(cx, cy), radius, radius)
@@ -151,7 +146,7 @@ class HeadingCompass(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPointF(cx, cy), radius, radius)
 
-        # Rotate the card opposite the heading so the lubber line reads true.
+        # Turn the card so the top mark reads current heading.
         p.save()
         p.translate(cx, cy)
         p.rotate(-self.heading)

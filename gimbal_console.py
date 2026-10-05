@@ -1,11 +1,8 @@
-# Pan-Tilt Gimbal Control Console
-# A desktop operator console for a two-axis stabilized camera platform.
-#
-# This build runs entirely against a software simulator (see simulator.py) so
-# it demonstrates the full operator experience with no hardware attached:
-# live attitude telemetry, pan/tilt/zoom command dispatch, per-subsystem
-# connection monitoring, and a latching emergency stop.
+# Pan-Tilt Gimbal Control Console.
+# Operator console for a two-axis camera platform, running against the
+# built-in simulator so it works with no hardware.
 
+import os
 import sys
 
 from PyQt6.QtWidgets import (
@@ -13,19 +10,34 @@ from PyQt6.QtWidgets import (
     QGridLayout, QMenuBar, QMessageBox, QWidget, QGroupBox, QSizePolicy,
     QSplitter, QLineEdit, QDialog, QFormLayout, QGraphicsDropShadowEffect,
 )
-from PyQt6.QtGui import QKeySequence, QAction, QColor, QDoubleValidator
+from PyQt6.QtGui import (
+    QKeySequence, QAction, QColor, QDoubleValidator, QPixmap, QPalette, QBrush,
+    QPainter,
+)
 from PyQt6.QtCore import Qt, QTimer
+
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 from simulator import GimbalSimulator
 from widgets import AttitudeIndicator, HeadingCompass
 
 VERSION = "1.0"
 
+# Crawler-GUI colorway.
+SAGE = "#809c9a"
+OLIVE = "#8e9775"
+MAUVE = "#776274"
+MAGENTA = "#995986"
+TAUPE = "#978a84"
+SANDSTONE = "#d6cfc4"
+PLUM = "#5d3a4a"
+PLUM_DK = "#4b2c3f"
+HOVER = "#b9b1a9"
+DARK_TEXT = "#2f2f2f"
+
 
 class GimbalConsole(QMainWindow):
-    """Main operator window for the pan-tilt gimbal."""
-
-    # Human-readable labels for each simulated subsystem.
+    # Labels for the status lights.
     SUBSYSTEM_LABELS = {
         "controller": "Controller",
         "input_device": "Input Device",
@@ -39,8 +51,6 @@ class GimbalConsole(QMainWindow):
 
         self.device = GimbalSimulator()
 
-        # Per-subsystem indicator widgets + "is currently red" flags, mirroring
-        # the connection-status pattern the console is built around.
         self.indicators = {}
         self.indicator_is_red = {name: True for name in self.device.SUBSYSTEMS}
         self._blink_on = False
@@ -54,86 +64,73 @@ class GimbalConsole(QMainWindow):
         self._build_stylesheets()
         self._init_ui()
 
-        # Live update loop: advance the sim and repaint instruments ~20x/sec.
+        # Advance the sim and repaint ~20x/sec.
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self._tick)
         self.update_timer.start(50)
 
-        # Slow blink timer for disconnected status LEDs.
+        # Blink offline status lights.
         self.blink_timer = QTimer(self)
         self.blink_timer.timeout.connect(self._blink_indicators)
         self.blink_timer.start(500)
 
-        # E-stop label flasher (kept stopped until engaged).
         self.estop_flash_timer = QTimer(self)
         self.estop_flash_timer.timeout.connect(self._toggle_estop_flash)
 
-        # Demo convenience: bring the platform online on launch.
+        # Bring the platform online on launch.
         self._connect_all()
 
-    # ------------------------------------------------------------------
-    # Styling
-    # ------------------------------------------------------------------
+    # --- styling ---
     def _build_stylesheets(self):
-        self.group_style = """
+        self.panel_style = """
             QGroupBox {
-                background-color: rgba(30, 39, 50, 0.85);
-                border: 1px solid #2f4a57;
-                border-radius: 10px;
-                margin-top: 14px;
-                padding: 14px;
-                font-size: 15px;
+                background: transparent;
+                border: 1px solid white;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding: 10px;
+                font-size: 16px;
                 font-weight: 700;
-                color: #d7e4ec;
+                color: white;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
                 subcontrol-position: top center;
-                padding: 0 8px;
-                color: #78dce8;
+                padding: 0 6px;
+                color: white;
             }
         """
-        self.button_style = """
-            QPushButton {
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                                  stop:0 #28505c, stop:1 #16222b);
-                border: 1px solid #3a6b79;
-                border-radius: 8px;
-                padding: 9px 14px;
-                font-size: 15px;
-                font-weight: 600;
-                color: #e7f1f6;
-            }
-            QPushButton:hover   { background-color: #2f6373; }
-            QPushButton:pressed { background-color: #16343d; border-style: inset; }
-            QPushButton:disabled{ color: #5c6b74; background-color: #1a242c; }
+        self.status_box_style = f"""
+            QGroupBox {{
+                background-color: {TAUPE};
+                border: 1px solid gray;
+                border-radius: 5px;
+                margin-top: 10px;
+                padding: 16px;
+                font-size: 16px;
+                font-weight: bold;
+                color: #000;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 4px;
+                color: white;
+            }}
         """
-        self.readout_style = """
-            QLabel {
-                background-color: #16222b;
-                border: 1px solid #2f4a57;
-                border-radius: 8px;
-                padding: 10px;
-                font-size: 18px;
-                font-weight: 700;
-                color: #78dce8;
-                font-family: "Consolas", "Space Mono", monospace;
-                qproperty-alignment: AlignCenter;
-            }
-        """
-        self.textbox_style = """
-            QLineEdit {
-                background-color: #0e171e;
-                color: #e7f1f6;
-                border: 1px solid #2f4a57;
+        self.textbox_style = f"""
+            QLineEdit {{
+                background-color: {SANDSTONE};
+                color: #333;
+                border: 1px solid {PLUM};
                 border-radius: 6px;
                 padding: 6px;
-                font-size: 15px;
-            }
+                font-size: 16px;
+            }}
         """
         self.estop_label_base = """
             QLabel {
-                color: #ff5555;
+                color: red;
                 font-size: 22px;
                 font-weight: 800;
                 border-radius: 6px;
@@ -143,24 +140,65 @@ class GimbalConsole(QMainWindow):
             }
         """
 
-    def _apply_shadow(self, widget, blur=18, color=(0, 0, 0, 170)):
+    def _readout_style(self, bg):
+        return f"""
+            QLabel {{
+                background-color: {bg};
+                border: none;
+                border-radius: 8px;
+                padding: 10px;
+                font-size: 18px;
+                font-weight: 600;
+                color: {DARK_TEXT};
+                font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+                qproperty-alignment: AlignCenter;
+            }}
+        """
+
+    def _button_style(self, top, border=PLUM):
+        return f"""
+            QPushButton {{
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                                  stop:0 {top}, stop:1 #ffffff);
+                border: 1px solid {border};
+                border-radius: 10px;
+                padding: 8px 16px;
+                font-size: 16px;
+                font-weight: 600;
+                color: black;
+            }}
+            QPushButton:hover   {{ background-color: {HOVER}; }}
+            QPushButton:pressed {{ background-color: {top}; border-style: inset; }}
+            QPushButton:disabled{{ color: #777; background-color: #cfc8bf; }}
+        """
+
+    def _apply_shadow(self, widget, blur=18, color=(63, 63, 63, 180)):
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(blur)
         shadow.setOffset(3, 3)
         shadow.setColor(QColor(*color))
         widget.setGraphicsEffect(shadow)
 
-    # ------------------------------------------------------------------
-    # Window construction
-    # ------------------------------------------------------------------
+    # --- window ---
     def _init_ui(self):
+        # Warm gradient background, dimmed when the window isn't focused.
+        bg = QPixmap(os.path.join(HERE, "assets", "background.jpg")).scaled(
+            self.width(), self.height() + 100,
+            Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        active_bg = QPixmap(bg)
+        inactive_bg = QPixmap(bg)
+        painter = QPainter(inactive_bg)
+        painter.fillRect(inactive_bg.rect(), QColor(0, 0, 0, 100))
+        painter.end()
+        palette = QPalette()
+        palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.Window, QBrush(active_bg))
+        palette.setBrush(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Window, QBrush(inactive_bg))
+        self.setPalette(palette)
+
         central = QWidget()
-        central.setStyleSheet("""
-            QWidget {
-                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                                                  stop:0 #0d1319, stop:1 #1b2735);
-            }
-        """)
+        central.setStyleSheet("background: transparent;")
         self.setCentralWidget(central)
 
         root = QVBoxLayout(central)
@@ -168,10 +206,10 @@ class GimbalConsole(QMainWindow):
 
         menu_bar = QMenuBar(self)
         menu_bar.setStyleSheet(
-            "QMenuBar { background:#0d1319; color:#d7e4ec; }"
-            "QMenuBar::item:selected { background:#28505c; }"
-            "QMenu { background:#16222b; color:#d7e4ec; }"
-            "QMenu::item:selected { background:#28505c; }"
+            f"QMenuBar {{ background:{TAUPE}; color:#000; }}"
+            f"QMenuBar::item:selected {{ background:{MAUVE}; color:white; }}"
+            "QMenu { background:#e7e1d8; color:#000; }"
+            f"QMenu::item:selected {{ background:{MAUVE}; color:white; }}"
         )
         self.setMenuBar(menu_bar)
         self._setup_file_menu(menu_bar)
@@ -179,11 +217,10 @@ class GimbalConsole(QMainWindow):
         self._setup_view_menu(menu_bar)
         self._setup_help_menu(menu_bar)
 
-        # Left: controls. Right: live instruments.
         control_group = QGroupBox("Control")
-        control_group.setStyleSheet(self.group_style)
+        control_group.setStyleSheet(self.panel_style)
         live_group = QGroupBox("Live View")
-        live_group.setStyleSheet(self.group_style)
+        live_group.setStyleSheet(self.panel_style)
 
         self.control_layout = QVBoxLayout()
         self.control_layout.setSpacing(12)
@@ -202,7 +239,6 @@ class GimbalConsole(QMainWindow):
         self.splitter.setSizes([460, 940])
         root.addWidget(self.splitter)
 
-        # Control column.
         self._setup_status_indicators(self.control_layout)
         self._setup_speed_controls(self.control_layout)
         self._setup_pan_controls(self.control_layout)
@@ -211,14 +247,11 @@ class GimbalConsole(QMainWindow):
         self.control_layout.addStretch(1)
         self._setup_estop(self.control_layout)
 
-        # Live column.
         self._setup_live_view(self.live_layout)
 
         self._default_splitter_sizes = self.splitter.sizes()
 
-    # ------------------------------------------------------------------
-    # Menus
-    # ------------------------------------------------------------------
+    # --- menus ---
     def _setup_file_menu(self, menu_bar):
         file_menu = menu_bar.addMenu("File")
         exit_action = QAction("Exit", self)
@@ -270,19 +303,17 @@ class GimbalConsole(QMainWindow):
         debug.triggered.connect(self._open_debug)
         help_menu.addAction(debug)
 
-    # ------------------------------------------------------------------
-    # Connection status indicators
-    # ------------------------------------------------------------------
+    # --- status lights ---
     def _setup_status_indicators(self, layout):
         box = QGroupBox("Connection Status")
-        box.setStyleSheet(self.group_style)
-        self._apply_shadow(box, blur=14)
+        box.setStyleSheet(self.status_box_style)
+        self._apply_shadow(box, blur=14, color=(0, 0, 0, 180))
         grid = QGridLayout()
         grid.setVerticalSpacing(8)
 
         for row, name in enumerate(self.device.SUBSYSTEMS):
             label = QLabel(self.SUBSYSTEM_LABELS[name] + ":")
-            label.setStyleSheet("color:#d7e4ec; font-weight:600;")
+            label.setStyleSheet("color:#000; font-weight:600;")
             indicator = self._create_status_indicator()
             self.indicators[name] = indicator
             grid.addWidget(label, row, 0)
@@ -294,35 +325,33 @@ class GimbalConsole(QMainWindow):
     def _create_status_indicator(self):
         dot = QLabel()
         dot.setFixedSize(26, 26)
-        dot.setStyleSheet("background-color:#d43535; border-radius:13px; border:2px solid #0d1319;")
+        dot.setStyleSheet("background-color:red; border-radius:13px; border:3px solid black;")
         return dot
 
     def _set_indicator_green(self, name):
         self.indicators[name].setStyleSheet(
-            "background-color:#54d670; border-radius:13px; border:2px solid #0d1319;")
+            "background-color:rgb(144,238,144); border-radius:13px; border:3px solid black;")
         self.indicator_is_red[name] = False
 
     def _set_indicator_red(self, name):
         self.indicators[name].setStyleSheet(
-            "background-color:#d43535; border-radius:13px; border:2px solid #0d1319;")
+            "background-color:red; border-radius:13px; border:3px solid black;")
         self.indicator_is_red[name] = True
 
     def _set_indicator_blank(self, name):
         self.indicators[name].setStyleSheet(
-            "background-color:#4a5560; border-radius:13px; border:2px solid #0d1319;")
+            "background-color:gray; border-radius:13px; border:3px solid black;")
 
-    # ------------------------------------------------------------------
-    # Control sections
-    # ------------------------------------------------------------------
+    # --- controls ---
     def _setup_speed_controls(self, layout):
         self.speed_label = QLabel("Slew Rate: HOLD")
-        self.speed_label.setStyleSheet(self.readout_style)
+        self.speed_label.setStyleSheet(self._readout_style(SAGE))
         self.speed_label.setFixedHeight(54)
 
         down = QPushButton("Rate Down")
         up = QPushButton("Rate Up")
         for b, fn in ((down, self._gear_down), (up, self._gear_up)):
-            b.setStyleSheet(self.button_style)
+            b.setStyleSheet(self._button_style(SAGE, PLUM_DK))
             self._apply_shadow(b)
             b.clicked.connect(fn)
 
@@ -338,15 +367,15 @@ class GimbalConsole(QMainWindow):
 
     def _setup_pan_controls(self, layout):
         self.pan_label = QLabel("Pan Heading: 000°")
-        self.pan_label.setStyleSheet(self.readout_style)
+        self.pan_label.setStyleSheet(self._readout_style(OLIVE))
         self.pan_label.setFixedHeight(54)
 
         left = QPushButton("◄ Pan CCW")
         right = QPushButton("Pan CW ►")
         for b in (left, right):
-            b.setStyleSheet(self.button_style)
+            b.setStyleSheet(self._button_style(OLIVE))
             self._apply_shadow(b)
-        # Momentary: pan only while the button is held down.
+        # Momentary: pan only while held.
         left.pressed.connect(lambda: self.device.nudge_pan(-1))
         left.released.connect(self.device.stop_pan)
         right.pressed.connect(lambda: self.device.nudge_pan(1))
@@ -364,18 +393,18 @@ class GimbalConsole(QMainWindow):
 
     def _setup_tilt_controls(self, layout):
         self.tilt_label = QLabel("Tilt Angle: 0.0°")
-        self.tilt_label.setStyleSheet(self.readout_style)
+        self.tilt_label.setStyleSheet(self._readout_style(MAUVE))
         self.tilt_label.setFixedHeight(54)
 
         self.tilt_textbox = QLineEdit()
         self.tilt_textbox.setStyleSheet(self.textbox_style)
-        self.tilt_textbox.setPlaceholderText("Enter tilt angle  [0° – 90°]")
+        self.tilt_textbox.setPlaceholderText("Enter tilt angle  [0 to 90]")
         self.tilt_textbox.setValidator(QDoubleValidator(0.0, 90.0, 1))
         self.tilt_textbox.setFixedHeight(40)
         self.tilt_textbox.returnPressed.connect(self._set_tilt_angle)
 
         set_btn = QPushButton("Set Tilt Angle")
-        set_btn.setStyleSheet(self.button_style)
+        set_btn.setStyleSheet(self._button_style(MAUVE))
         self._apply_shadow(set_btn)
         set_btn.clicked.connect(self._set_tilt_angle)
 
@@ -391,11 +420,11 @@ class GimbalConsole(QMainWindow):
 
     def _setup_zoom_controls(self, layout):
         self.zoom_label = QLabel("Zoom Stage: Retracted (0%)")
-        self.zoom_label.setStyleSheet(self.readout_style)
+        self.zoom_label.setStyleSheet(self._readout_style(MAGENTA))
         self.zoom_label.setFixedHeight(54)
 
         self.zoom_btn = QPushButton("Extend / Retract Zoom")
-        self.zoom_btn.setStyleSheet(self.button_style)
+        self.zoom_btn.setStyleSheet(self._button_style(MAGENTA))
         self._apply_shadow(self.zoom_btn)
         self.zoom_btn.clicked.connect(self._toggle_zoom)
 
@@ -410,7 +439,7 @@ class GimbalConsole(QMainWindow):
         self.estop_btn.setFixedHeight(70)
         self.estop_btn.setStyleSheet("""
             QPushButton {
-                background-color: #c40000;
+                background-color: rgb(196, 0, 0);
                 border: 2px solid #ff8a8a;
                 border-radius: 10px;
                 color: white;
@@ -430,7 +459,7 @@ class GimbalConsole(QMainWindow):
         self.estop_status_label.hide()
 
         self.reset_estop_btn = QPushButton("Reset E-Stop")
-        self.reset_estop_btn.setStyleSheet(self.button_style)
+        self.reset_estop_btn.setStyleSheet(self._button_style(TAUPE))
         self._apply_shadow(self.reset_estop_btn)
         self.reset_estop_btn.clicked.connect(self._reset_estop)
         self.reset_estop_btn.hide()
@@ -452,14 +481,12 @@ class GimbalConsole(QMainWindow):
         self.pitch_readout = QLabel("Pitch: 0.0°")
         self.roll_readout = QLabel("Roll: 0.0°")
         for lbl in (self.pitch_readout, self.roll_readout):
-            lbl.setStyleSheet(self.readout_style)
+            lbl.setStyleSheet(self._readout_style(OLIVE))
             lbl.setFixedHeight(50)
             readout_row.addWidget(lbl)
         layout.addLayout(readout_row)
 
-    # ------------------------------------------------------------------
-    # Live update loop
-    # ------------------------------------------------------------------
+    # --- update loop ---
     def _tick(self):
         self.device.step()
 
@@ -477,7 +504,6 @@ class GimbalConsole(QMainWindow):
             state = "Moving"
         self.zoom_label.setText(f"Zoom Stage: {state} ({int(self.device.zoom_position)}%)")
 
-        # Drive status LEDs green when the subsystem is online.
         for name in self.device.SUBSYSTEMS:
             if self.device.is_connected(name) and self.indicator_is_red[name]:
                 self._set_indicator_green(name)
@@ -485,8 +511,6 @@ class GimbalConsole(QMainWindow):
                 self._set_indicator_red(name)
 
     def _blink_indicators(self):
-        # Pulse disconnected LEDs between red and blank so an offline subsystem
-        # is obvious at a glance.
         self._blink_on = not self._blink_on
         for name in self.device.SUBSYSTEMS:
             if not self.device.is_connected(name):
@@ -495,9 +519,7 @@ class GimbalConsole(QMainWindow):
                 else:
                     self._set_indicator_red(name)
 
-    # ------------------------------------------------------------------
-    # Command handlers
-    # ------------------------------------------------------------------
+    # --- command handlers ---
     def _connect_all(self):
         self.device.connect_all()
 
@@ -551,9 +573,7 @@ class GimbalConsole(QMainWindow):
             return
         self.device.home_zoom()
 
-    # ------------------------------------------------------------------
-    # Emergency stop
-    # ------------------------------------------------------------------
+    # --- emergency stop ---
     def _engage_estop(self):
         self.estopped = True
         self.device.engage_estop()
@@ -575,9 +595,7 @@ class GimbalConsole(QMainWindow):
         self.estop_status_label.setStyleSheet(self.estop_label_base % shade)
         self.estop_flash_state = not self.estop_flash_state
 
-    # ------------------------------------------------------------------
-    # View / help / debug
-    # ------------------------------------------------------------------
+    # --- view / help / debug ---
     def _toggle_fullscreen(self):
         if self.isFullScreen():
             self.showNormal()
@@ -591,15 +609,15 @@ class GimbalConsole(QMainWindow):
         QMessageBox.about(
             self, "About",
             f"<b>Pan-Tilt Gimbal Control Console</b> v{VERSION}<br><br>"
-            "An operator console for a two-axis stabilized camera platform.<br>"
-            "This build runs against a built-in simulator — no hardware required.<br><br>"
+            "Operator console for a two-axis camera platform.<br>"
+            "Runs against a built-in simulator — no hardware required.<br><br>"
             "Built with Python and PyQt6."
         )
 
     def _open_debug(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("Debug Menu")
-        dlg.setStyleSheet("QDialog { background:#16222b; } QLabel { color:#d7e4ec; }")
+        dlg.setStyleSheet(f"QDialog {{ background:{TAUPE}; }} QLabel {{ color:#000; }}")
         form = QFormLayout(dlg)
 
         pitch_box = QLineEdit(); pitch_box.setStyleSheet(self.textbox_style)
@@ -610,7 +628,7 @@ class GimbalConsole(QMainWindow):
         form.addRow("Force Heading (°):", heading_box)
 
         apply_btn = QPushButton("Apply")
-        apply_btn.setStyleSheet(self.button_style)
+        apply_btn.setStyleSheet(self._button_style(MAUVE))
 
         def apply():
             try:
@@ -628,9 +646,7 @@ class GimbalConsole(QMainWindow):
         form.addRow(apply_btn)
         dlg.exec()
 
-    # ------------------------------------------------------------------
-    # Shutdown
-    # ------------------------------------------------------------------
+    # --- shutdown ---
     def closeEvent(self, event):
         reply = QMessageBox.question(
             self, "Confirm Exit", "Are you sure you want to quit?",
@@ -648,13 +664,11 @@ class GimbalConsole(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet("""
-        QLabel  { font-family: "Segoe UI", Arial, sans-serif; color:#d7e4ec; }
-        QToolTip { color:#e7f1f6; background:#16222b; border:1px solid #2f4a57; }
+        QLabel  { font-family: "Segoe UI", Arial, sans-serif; color:white; font-weight:bold; }
     """)
     window = GimbalConsole()
 
-    # Headless-friendly smoke test: open the window, run the loop briefly while
-    # exercising a few commands, then exit 0 if nothing threw.
+    # Headless smoke test: open, run briefly, exercise commands, exit 0.
     if "--selftest" in sys.argv:
         window.show()
         window._connect_all()

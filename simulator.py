@@ -1,10 +1,5 @@
-# Simulated device backend for the Pan-Tilt Gimbal Control Console.
-#
-# There is no hardware attached. This module fakes a two-axis stabilized
-# camera platform so the console can be demonstrated end to end: it generates
-# live attitude telemetry, responds to pan/tilt/zoom commands, and models
-# connect / disconnect / homing / E-stop behavior. Everything the GUI reads
-# comes from here.
+# Software model of a two-axis gimbal. Fakes attitude telemetry and responds
+# to pan/tilt/zoom commands so the console runs without hardware.
 
 import math
 import random
@@ -12,15 +7,7 @@ import time
 
 
 class GimbalSimulator:
-    """
-    Software model of a two-axis stabilized camera gimbal.
-
-    The GUI polls `step()` on a timer and reads the public attributes below.
-    Units: degrees for all angles, 0-100 for the zoom stage, 0-5 for the
-    slew-rate "gear".
-    """
-
-    # Subsystems the console reports a connection status for.
+    # Subsystems the console shows a status light for.
     SUBSYSTEMS = ("controller", "input_device", "drive_power", "pan_motor", "tilt_motor")
 
     MAX_SPEED_MODE = 5
@@ -28,43 +15,36 @@ class GimbalSimulator:
     MAX_TILT = 90.0
 
     def __init__(self):
-        # Connection flags per subsystem. Start disconnected; the console can
-        # bring them online (the demo auto-connects on launch).
         self.connected = {name: False for name in self.SUBSYSTEMS}
 
-        # Live platform attitude (the disturbance the gimbal rides on).
+        # Platform attitude.
         self.pitch = 0.0
         self.roll = 0.0
         self._pitch_target = 0.0
         self._roll_target = 0.0
         self._next_disturbance = 0.0
 
-        # Pan axis (continuous heading, 0-360).
+        # Pan axis (heading 0-360).
         self.heading = 0.0
-        self._pan_rate = 0.0            # deg/sec, signed; set by nudging pan
+        self._pan_rate = 0.0
 
-        # Tilt axis (commanded elevation of the camera).
+        # Tilt axis.
         self.tilt_angle = 0.0
         self._tilt_target = 0.0
         self.tilt_moving = False
 
-        # Zoom / focus stage (0 = retracted, 100 = fully extended).
+        # Zoom stage (0 = retracted, 100 = extended).
         self.zoom_position = 0.0
         self._zoom_target = 0.0
         self.zoom_extended = False
         self.zoom_moving = False
 
-        # Slew-rate gear, 0 (hold) .. MAX_SPEED_MODE (fast).
         self.speed_mode = 0
-
-        # Safety.
         self.estopped = False
 
         self._last_step = time.monotonic()
 
-    # ------------------------------------------------------------------
-    # Connection management
-    # ------------------------------------------------------------------
+    # --- connections ---
     def connect(self, subsystem):
         if subsystem in self.connected:
             self.connected[subsystem] = True
@@ -84,9 +64,7 @@ class GimbalSimulator:
     def fully_online(self):
         return all(self.connected.values())
 
-    # ------------------------------------------------------------------
-    # Commands
-    # ------------------------------------------------------------------
+    # --- commands ---
     def set_speed_mode(self, mode):
         self.speed_mode = max(0, min(self.MAX_SPEED_MODE, int(mode)))
 
@@ -97,7 +75,7 @@ class GimbalSimulator:
         self.set_speed_mode(self.speed_mode - 1)
 
     def nudge_pan(self, direction):
-        """direction: -1 (CCW) or +1 (CW). Pan speed scales with the gear."""
+        # direction: -1 CCW, +1 CW. Speed scales with the gear.
         if self.estopped or not self.is_connected("pan_motor"):
             return
         self._pan_rate = direction * (8.0 + 12.0 * self.speed_mode)
@@ -108,8 +86,7 @@ class GimbalSimulator:
     def set_tilt_angle(self, angle):
         if self.estopped or not self.is_connected("tilt_motor"):
             return False
-        angle = max(self.MIN_TILT, min(self.MAX_TILT, float(angle)))
-        self._tilt_target = angle
+        self._tilt_target = max(self.MIN_TILT, min(self.MAX_TILT, float(angle)))
         self.tilt_moving = True
         return True
 
@@ -133,7 +110,7 @@ class GimbalSimulator:
         return True
 
     def engage_estop(self):
-        """Latch the emergency stop: freeze all motion."""
+        # Latch the stop and freeze all motion.
         self.estopped = True
         self._pan_rate = 0.0
         self._tilt_target = self.tilt_angle
@@ -145,13 +122,10 @@ class GimbalSimulator:
     def reset_estop(self):
         self.estopped = False
 
-    # ------------------------------------------------------------------
-    # Simulation tick
-    # ------------------------------------------------------------------
+    # --- tick ---
     def step(self):
-        """Advance the model by the real elapsed time since the last call."""
         now = time.monotonic()
-        dt = min(0.1, now - self._last_step)  # clamp so a stall can't jump the sim
+        dt = min(0.1, now - self._last_step)
         self._last_step = now
 
         self._update_attitude(dt, now)
@@ -160,9 +134,8 @@ class GimbalSimulator:
         self._update_zoom(dt)
 
     def _update_attitude(self, dt, now):
-        # The platform base drifts under simulated disturbance; the gimbal is
-        # "riding" it. Re-roll a gentle target periodically and ease toward it,
-        # then add a little high-frequency jitter so the horizon never freezes.
+        # Drift toward a new random target every few seconds, plus a little
+        # jitter so the horizon never sits still.
         if not self.is_connected("controller"):
             return
         if now >= self._next_disturbance:
@@ -182,7 +155,7 @@ class GimbalSimulator:
     def _update_tilt(self, dt):
         if not self.tilt_moving:
             return
-        rate = 25.0 + 10.0 * self.speed_mode  # deg/sec, faster in higher gears
+        rate = 25.0 + 10.0 * self.speed_mode
         delta = self._tilt_target - self.tilt_angle
         step = rate * dt
         if abs(delta) <= step:
@@ -194,7 +167,7 @@ class GimbalSimulator:
     def _update_zoom(self, dt):
         if not self.zoom_moving:
             return
-        rate = 60.0  # percent/sec
+        rate = 60.0
         delta = self._zoom_target - self.zoom_position
         step = rate * dt
         if abs(delta) <= step:

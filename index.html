@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pan-Tilt Gimbal Control Console</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #2f2f2f;
+    line-height: 1.6;
+    background: linear-gradient(135deg, #e3a06a 0%, #cdbfa8 45%, #b2b6ba 100%);
+    min-height: 100vh;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 20px 72px; }
+  header { text-align: center; margin-bottom: 32px; }
+  h1 { font-size: 2.2rem; color: #2f2f2f; }
+  .sub { font-size: 1.05rem; color: #4b2c3f; margin-top: 8px; }
+  .note {
+    background: #978a84; color: #1a1a1a; border-radius: 10px;
+    padding: 16px 20px; margin: 24px 0; font-style: italic;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  }
+  .shot { width: 100%; border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,0.35); display: block; }
+  h2 { margin: 36px 0 12px; color: #4b2c3f; font-size: 1.4rem; }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .accent-sage { color: #4a5f5d; }
+  pre {
+    background: #322c26; color: #e7e1d8; border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; font-size: 0.95rem;
+  }
+  .btn {
+    display: inline-block; margin-top: 24px; padding: 12px 22px;
+    background: linear-gradient(to bottom, #776274, #ffffff);
+    color: #1a1a1a; text-decoration: none; font-weight: 600;
+    border: 1px solid #5d3a4a; border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(63,63,63,0.4);
+  }
+  .btn:hover { background: #b9b1a9; }
+  footer { margin-top: 48px; text-align: center; color: #4b2c3f; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Pan-Tilt Gimbal Control Console</h1>
+    <p class="sub">A desktop operator console for a two axis camera platform. Python and PyQt6.</p>
+  </header>
+
+  <p class="note">Some of my professional work can't be shown publicly, so I built this as a stand-in.
+  It uses the same design patterns and interface techniques I developed on the job, applied to a
+  neutral example and wired to a software simulator instead of real hardware.</p>
+
+  <img class="shot" src="assets/screenshot.png" alt="The console running against its simulator">
+
+  <h2>What it does</h2>
+  <ul>
+    <li>A hand drawn artificial horizon and heading compass that track the platform's live attitude.</li>
+    <li>Pan, tilt, and zoom controls, plus a slew rate "gear" that scales how fast the axes move.</li>
+    <li>Connection monitoring for five subsystems, with status lights that blink when one drops offline.</li>
+    <li>A latching emergency stop that freezes all motion and flashes until you reset it.</li>
+    <li>A built-in simulator, so the whole thing runs with no hardware attached.</li>
+  </ul>
+
+  <h2>Run it</h2>
+  <p>This is a desktop app, so it runs locally rather than in the browser:</p>
+  <pre>pip install -r requirements.txt
+python gimbal_console.py</pre>
+
+  <a class="btn" id="repo-link" href="#">View the code on GitHub</a>
+
+  <footer>Built with Python and PyQt6.</footer>
+</div>
+
+<script>
+  // Point the button at this repo on GitHub Pages (user.github.io/repo).
+  (function () {
+    var host = location.hostname, path = location.pathname.split('/').filter(Boolean);
+    if (host.endsWith('github.io') && path.length) {
+      document.getElementById('repo-link').href =
+        'https://github.com/' + host.split('.')[0] + '/' + path[0];
+    } else {
+      document.getElementById('repo-link').style.display = 'none';
+    }
+  })();
+</script>
+</body>
+</html>
